@@ -8,7 +8,7 @@ note: I am back working on this backend ( Any help would be nice )
 | --------------- | ----------- |
 | [Lawin](https://github.com/Lawin0129) | Creator of V2 |
 | [Mxrc3l](https://github.com/Akadi5) | Creator of Crowd-Backend |
-| [ObsessedTech](https://github.com/endlessalpacaYT/Backend-S12) | Made the Version and Update command |
+| [Pongo / ObsessedTech](https://github.com/endlessalpacaYT/Backend-S12) | Made the Version and Update command |
 
 
 ## Features:
