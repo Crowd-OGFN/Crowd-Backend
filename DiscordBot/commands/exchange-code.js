@@ -1,13 +1,13 @@
-const { EmbedBuilder, SlashCommandBuilder } = require("discord.js");
+const { EmbedBuilder } = require("discord.js");
 const User = require("../../model/user.js");
 const functions = require("../../structs/functions.js");
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('exchange-code')
-        .setDescription('Generates an exchange code for login. (One time use and expires after 5 minutes if unused).')
-        .setDefaultMemberPermissions(null),
-    async execute(interaction) {
+    commandInfo: {
+        name: "exchange-code",
+        description: "Generates an exchange code for login. (One time use and expires after 5 mins if unused)."
+    },
+    execute: async (interaction) => {
         await interaction.deferReply({ ephemeral: true });
 
         const user = await User.findOne({ discordId: interaction.user.id }).lean();
@@ -15,31 +15,30 @@ module.exports = {
             return interaction.editReply({ content: "You do not have a registered account!", ephemeral: true });
         }
 
-        let exchangeCode = functions.MakeID().replace(/-/g, "");
+        const exchange_code = functions.MakeID().replace(/-/ig, "");
+
         global.exchangeCodes.push({
             accountId: user.accountId,
-            exchange_code: exchangeCode,
+            exchange_code: exchange_code,
             creatingClientId: ""
         });
 
         setTimeout(() => {
-            let index = global.exchangeCodes.findIndex(code => code.exchange_code === exchangeCode);
+            const index = global.exchangeCodes.findIndex(i => i.exchange_code === exchange_code);
             if (index !== -1) global.exchangeCodes.splice(index, 1);
         }, 300000); // 5 minutes
 
-        let embed = new EmbedBuilder()
-            .setColor("#302c34")
-            .setAuthor({
-                name: interaction.user.tag,
-                iconURL: interaction.user.avatarURL()
-            })
-            .addFields({ name: "Exchange Code", value: exchangeCode })
+        const embed = new EmbedBuilder()
+            .setColor("#00FF00") // Green color to signify success
+            .setTitle("Exchange Code Generated")
+            .setThumbnail(interaction.user.avatarURL())
+            .addFields(
+                { name: "Exchange Code", value: `\`${exchange_code}\``, inline: true },
+                { name: "Valid For", value: "5 minutes", inline: true }
+            )
+            .setFooter({ text: `Requested by ${interaction.user.tag}`, iconURL: interaction.user.avatarURL() })
             .setTimestamp();
 
-        interaction.editReply({
-            content: "Successfully generated an exchange code.",
-            embeds: [embed],
-            ephemeral: true
-        });
+        interaction.editReply({ content: "Successfully generated an exchange code.", embeds: [embed], ephemeral: true });
     }
-};
+}

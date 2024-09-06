@@ -1,72 +1,46 @@
-const { Client, GatewayIntentBits, Collection, ActivityType } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, InteractionType } = require("discord.js");
 const { config } = require("dotenv");
-config(); // Load environment variables from .env file
-
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages
-    ]
-});
 const fs = require("fs");
 
-const log = require("../structs/log.js");
+config(); // Load environment variables from .env file
 
-client.once("ready", async () => {
-    log.bot("Discord Bot is online!");
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
-    // Set the bot's activity status
-    client.user.setPresence({
-        activities: [{ name: "Crowd", type: ActivityType.Watching }],
-        status: "online"
-    });
+client.commands = new Collection();
 
+const commandFiles = fs.readdirSync("./DiscordBot/commands").filter(file => file.endsWith(".js"));
 
-    const commands = client.application.commands;
+for (const file of commandFiles) {
+    const command = require(`./commands/${file}`);
+    client.commands.set(command.commandInfo.name, command);
+}
 
-    // Ensure that all commands are loaded before the bot is ready
-    const commandFiles = fs.readdirSync("./DiscordBot/commands").filter(file => file.endsWith(".js"));
-    for (const fileName of commandFiles) {
-        const command = require(`./commands/${fileName}`);
+client.once("ready", () => {
+    console.log("Discord Bot is online!");
 
-        // Handle permissions with PermissionsBitField
-        const defaultPermissions = command.commandInfo?.default_member_permissions
-            ? PermissionsBitField.resolve(command.commandInfo.default_member_permissions)
-            : null;
+    const guildId = process.env.GUILD_ID;
+    const guild = client.guilds.cache.get(guildId);
+    let commands;
 
-        // Check if commandInfo exists and handle it
-        if (command.commandInfo) {
-            await commands.create({
-                ...command.commandInfo,
-                default_member_permissions: defaultPermissions
-            });
-        } else if (command.data) {
-            // Fallback to using command.data if commandInfo is not available
-            const defaultPermissionsData = command.data.default_member_permissions
-                ? PermissionsBitField.resolve(command.data.default_member_permissions)
-                : null;
-            await commands.create({
-                ...command.data,
-                default_member_permissions: defaultPermissionsData
-            });
-        } else {
-            console.error(`Command file ${fileName} is missing commandInfo or data.`);
-        }
+    if (guild) {
+        commands = guild.commands;
+    } else {
+        commands = client.application.commands;
     }
+
+    commandFiles.forEach(file => {
+        const command = require(`./commands/${file}`);
+        commands.create(command.commandInfo);
+    });
 });
 
 client.on("interactionCreate", async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const commandPath = `./DiscordBot/commands/${interaction.commandName}.js`;
-    if (fs.existsSync(commandPath)) {
-        const command = require(commandPath);
-        try {
-            await command.execute(interaction);
-        } catch (error) {
-            console.error(error);
-            await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
-        }
+    if (interaction.isCommand()) {
+        const command = client.commands.get(interaction.commandName);
+        if (command) await command.execute(interaction);
+    } else if (interaction.type === InteractionType.ModalSubmit) {
+        const command = client.commands.get('create');
+        if (command) await command.handleModal(interaction);
     }
 });
 
