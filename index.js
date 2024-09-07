@@ -15,7 +15,7 @@ dotenv.config();
 if (!fs.existsSync("./ClientSettings")) fs.mkdirSync("./ClientSettings");
 
 global.JWT_SECRET = functions.MakeID();
-const PORT = 8080;
+const PORT = 3551;
 
 const tokens = JSON.parse(fs.readFileSync("./tokenManager/tokens.json").toString());
 
@@ -37,8 +37,15 @@ global.clientTokens = tokens.clientTokens;
 
 global.exchangeCodes = [];
 
-mongoose.connect(process.env.MONGODB_DATABASE, () => {
+
+mongoose.connect(process.env.MONGODB_DATABASE, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => {
     log.backend("Crowd successfully connected to MongoDB!");
+}).catch(err => {
+    log.error("MongoDB connection error: ", err);
+    throw err;
 });
 
 mongoose.connection.on("error", err => {
@@ -62,16 +69,16 @@ app.listen(PORT, () => {
 }).on("error", async (err) => {
     if (err.code == "EADDRINUSE") {
         log.error(`Port ${PORT} is already in use!\nClosing in 3 seconds...`);
-        await functions.sleep(3000)
+        await functions.sleep(3000);
         process.exit(0);
     } else throw err;
 });
 
-// if endpoint not found, return this error
+
 app.use((req, res, next) => {
     error.createError(
-        "errors.com.epicgames.common.not_found", 
-        "Sorry the resource you were trying to find could not be found", 
+        "errors.com.epicgames.common.not_found",
+        "Sorry the resource you were trying to find could not be found",
         undefined, 1004, undefined, 404, res
     );
 });
@@ -79,6 +86,5 @@ app.use((req, res, next) => {
 function DateAddHours(pdate, number) {
     let date = pdate;
     date.setHours(date.getHours() + number);
-
     return date;
 }
