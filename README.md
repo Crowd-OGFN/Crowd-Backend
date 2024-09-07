@@ -22,8 +22,6 @@ note: I am back working on this backend ( Any help would be nice )
 ## Features:
 
 ### Crowd Backend
-- [x] Fast Login
-- [ ] MariaDB Database system
 - [x] Discord.js v14 Bot commands
 - [x] Improved Bot Commands
 - [ ] API for version check
