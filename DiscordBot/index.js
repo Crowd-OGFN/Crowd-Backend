@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, Collection, InteractionType } = require("discord.js");
 const { config } = require("dotenv");
 const fs = require("fs");
+const logger = require('../structs/log');
 
 config(); // Load environment variables from .env file
 
@@ -16,7 +17,7 @@ for (const file of commandFiles) {
 }
 
 client.once("ready", () => {
-    console.log("Discord Bot is online!");
+    logger.bot(`Bot online and logged in as ${client.user.username}`);
 
     const guildId = process.env.GUILD_ID;
     const guild = client.guilds.cache.get(guildId);

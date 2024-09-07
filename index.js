@@ -38,7 +38,7 @@ global.clientTokens = tokens.clientTokens;
 global.exchangeCodes = [];
 
 mongoose.connect(process.env.MONGODB_DATABASE, () => {
-    log.backend("Crowd Backend successfully connected to MongoDB!");
+    log.backend("Crowd successfully connected to MongoDB!");
 });
 
 mongoose.connection.on("error", err => {
@@ -55,7 +55,7 @@ fs.readdirSync("./routes").forEach(fileName => {
 });
 
 app.listen(PORT, () => {
-    log.backend(`Crowd Backend started listening on port ${PORT}`);
+    log.backend(`Crowd started listening on port ${PORT}`);
 
     require("./xmpp/xmpp.js");
     require("./DiscordBot");
