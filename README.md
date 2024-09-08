@@ -12,7 +12,6 @@
 | [Pongo / ObsessedTech](https://github.com/endlessalpacaYT/Backend-S12) | Made parts of the Info command and made the whole Update command |
 
 
-
 ## Features:
 
 ### Crowd Backend
