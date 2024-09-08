@@ -25,7 +25,7 @@
         "price": 0
     },
     "featured1": {
-        "itemGrants": ["AthenaCharacter:cid_007_athena_commando_m_default"],
+        "itemGrants": ["AthenaMusicPack:MusicPack_006_Twist"],
         "price": 0
     },
     "featured2": {

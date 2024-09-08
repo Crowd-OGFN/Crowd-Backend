@@ -1,43 +1,20 @@
 const express = require("express");
 const app = express.Router();
+
 const Friends = require("../model/friends");
 const Profile = require("../model/profiles.js");
 const profileManager = require("../structs/profile.js");
-const error = require("../structs/error.js");
-const functions = require("../structs/functions.js");
+const Version = require("../structs/functions");
+const error = require("../structs/error");
+const Xmpp = require("../xmpp/xmpp");
+const fs = require("fs");
+const path = require("path");
+const items = require("../structs/functions");
+const id = require("../structs/functions");
 
 const { verifyToken, verifyClient } = require("../tokenManager/tokenVerify.js");
 
 global.giftReceived = {};
-
- /* app.use(async function (req, res) {
-    if (!req.query.profileId) {
-        return res.status(404).json({
-            error: "Profile not defined."
-        });
-    }
-    functions.GetVersionInfo(req);
-    const profile = await Profile.findOne({ accountId: req.user.accountId });
-    if (!profile.rvn) profile.rvn = 0;
-    if (!profile.items) profile.items = {}
-    if (!profile.stats) profile.stats = {}
-    if (!profile.stats.attributes) profile.stats.attributes = {}
-    if (!profile.commandRevision) profile.commandRevision = 0;
-
-
-    var SeasonData = JSON.parse(JSON.stringify(require("./../responses/SeasonData.json")));
-    profile.stats.attributes.season_num = memory.season;
-
-    if (SeasonData[`Season${memory.season}`]) {
-        SeasonData = SeasonData[`Season${memory.season}`];
-
-        profile.stats.attributes.book_purchased = SeasonData.battlePassPurchased;
-        profile.stats.attributes.book_level = SeasonData.battlePassTier;
-        profile.stats.attributes.season_match_boost = SeasonData.battlePassXPBoost;
-        profile.stats.attributes.season_friend_match_boost = SeasonData.battlePassXPFriendBoost;
-        }
-    }
-) */
 
 
 app.post("/fortnite/api/game/v2/profile/*/client/SetReceiveGiftsEnabled", verifyToken, async (req, res) => {
@@ -45,7 +22,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetReceiveGiftsEnabled", verify
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
@@ -53,11 +30,11 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetReceiveGiftsEnabled", verify
 
     if (req.query.profileId != "common_core") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `SetReceiveGiftsEnabled is not valid on ${req.query.profileId} profile`, 
+        `SetReceiveGiftsEnabled is not valid on ${req.query.profileId} profile`,
         ["SetReceiveGiftsEnabled",req.query.profileId], 12801, undefined, 400, res
     );
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     let ApplyProfileChanges = [];
     let BaseRevision = profile.rvn;
@@ -100,116 +77,12 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetReceiveGiftsEnabled", verify
     });
 });
 
-app.post("/fortnite/api/game/v2/profile/*/client/RefundMtxPurchase", verifyToken, async (req, res) => {
-    
-    const profilesy = await Profile.findOne({ accountId: req.user.accountId });
-
-    let profile = profilesy.profiles[req.query.profileId];
-    let athena = profilesy.profiles["athena"];
-
-    // do not change any of these or you will end up breaking it
-    var ApplyProfileChanges = [];
-    let MultiUpdate = [{
-        "profileRevision": athena.rvn || 0,
-        "profileId": "athena",
-        "profileChangesBaseRevision": athena.rvn || 0,
-        "profileChanges": [],
-        "profileCommandRevision": athena.commandRevision || 0,
-    }];
-    var BaseRevision = profile.rvn;
-    var QueryRevision = req.query.rvn || -1;
-    var StatChanged = false;
-    let ProfileRevisionCheck = (memory.build >= 12.20) ? profile.commandRevision : profile.rvn;
-
-    var ItemCost = [];
-    var ItemGuids = [];
-
-    if (req.body.purchaseId) {
-        MultiUpdate.push({
-            "profileRevision": athena.rvn || 0,
-            "profileId": "athena",
-            "profileChangesBaseRevision": athena.rvn || 0,
-            "profileChanges": [],
-            "profileCommandRevision": athena.commandRevision || 0,
-        })
-
-        profile.stats.attributes.mtx_purchase_history.refundsUsed += 1;
-        profile.stats.attributes.mtx_purchase_history.refundCredits -= 1;
-
-        for (var i = 0; i < profile.stats.attributes.mtx_purchase_history.purchases.length; i++) {
-            if (profile.stats.attributes.mtx_purchase_history.purchases[i].purchaseId == req.body.purchaseId) {
-                for (var x = 0; x < profile.stats.attributes.mtx_purchase_history.purchases[i].lootResult.length; x++) {
-                    ItemGuids.push(profile.stats.attributes.mtx_purchase_history.purchases[i].lootResult[x].itemGuid)
-                }
-                profile.stats.attributes.mtx_purchase_history.purchases[i].refundDate = new Date().toISOString();
-            }
-        }
-        for (var i = 0; i < ItemGuids.length; i++) {
-            delete athena.items[ItemGuids[i]]
-
-            MultiUpdate[0].profileChanges.push({
-                "changeType": "itemRemoved",
-                "itemId": ItemGuids[i]
-            })
-        }
-
-        athena.rvn += 1;
-        athena.commandRevision += 1;
-        profile.rvn += 1;
-        profile.commandRevision += 1;
-
-        StatChanged = true;
-    }
-
-    if (StatChanged == true) {
-        profile.updated = new Date().toISOString();
-
-        await profile.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
-
-        /*        profile.rvn += 1;
-        profile.commandRevision += 1;
-        profile.updated = new Date().toISOString();
-
-        await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
-        */
-
-        ApplyProfileChanges.push({
-            "changeType": "statModified",
-            "name": "mtx_purchase_history",
-            "value": profile.stats.attributes.mtx_purchase_history
-        })
-
-        MultiUpdate[0].profileRevision = athena.rvn || 0;
-        MultiUpdate[0].profileCommandRevision = athena.commandRevision || 0;
-    }
-
-    // this doesn't work properly on version v12.20 and above but whatever
-    if (QueryRevision != ProfileRevisionCheck) {
-        ApplyProfileChanges = [{
-            "changeType": "fullProfileUpdate",
-            "profile": profile
-        }];
-    }
-
-
-    res.json({
-        profileRevision: profile.rvn || 0,
-        profileId: req.query.profileId,
-        profileChangesBaseRevision: BaseRevision,
-        profileChanges: ApplyProfileChanges,
-        profileCommandRevision: profile.commandRevision || 0,
-        serverTime: new Date().toISOString(),
-        responseVersion: 1
-    });
-});
-
-
 app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken, async (req, res) => {
     const profiles = await Profile.findOne({ accountId: req.user.accountId });
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
@@ -217,11 +90,11 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
 
     if (req.query.profileId != "common_core") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `GiftCatalogEntry is not valid on ${req.query.profileId} profile`, 
+        `GiftCatalogEntry is not valid on ${req.query.profileId} profile`,
         ["GiftCatalogEntry",req.query.profileId], 12801, undefined, 400, res
     );
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     let Notifications = [];
     let ApplyProfileChanges = [];
@@ -290,10 +163,10 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
 
     if (!profile.items) profile.items = {};
 
-    let findOfferId = functions.getOfferID(req.body.offerId);
+    let findOfferId = items.getOfferID(req.body.offerId);
     if (!findOfferId) return error.createError(
         "errors.com.epicgames.fortnite.id_invalid",
-        `Offer ID (id: '${req.body.offerId}') not found`, 
+        `Offer ID (id: '${req.body.offerId}') not found`,
         [req.body.offerId], 16027, undefined, 400, res
     );
 
@@ -316,15 +189,15 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
                     );
 
                     profile.items[key].quantity -= price;
-                        
+
                     ApplyProfileChanges.push({
                         "changeType": "itemQuantityChanged",
                         "itemId": key,
                         "quantity": profile.items[key].quantity
                     });
-        
+
                     paid = true;
-        
+
                     break;
                 }
 
@@ -364,7 +237,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
                 let athena = receiverProfiles.profiles["athena"];
                 let common_core = ((receiverId == req.user.accountId) ? profile : receiverProfiles.profiles["common_core"]);
 
-                let giftBoxItemID = functions.MakeID();
+                let giftBoxItemID = id.MakeID();
                 let giftBoxItem = {
                     "templateId": req.body.giftWrapTemplateId,
                     "attributes": {
@@ -383,7 +256,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
                 if (!common_core.items) common_core.items = {};
 
                 for (let value of findOfferId.offerId.itemGrants) {
-                    const ID = functions.MakeID();
+                    const ID = id.MakeID();
 
                     const Item = {
                         "templateId": value.templateId,
@@ -393,7 +266,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
                         },
                         "quantity": 1
                     };
-            
+
                     athena.items[ID] = Item;
 
                     giftBoxItem.attributes.lootList.push({
@@ -424,21 +297,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/GiftCatalogEntry", verifyToken,
 
                 global.giftReceived[receiverId] = true;
 
-                functions.sendXmppMessageToId({
+                Xmpp.sendXmppMessageToId({
                     type: "com.epicgames.gift.received",
                     payload: {},
                     timestamp: new Date().toISOString()
                 }, receiverId);
             }
-        break;
+            break;
     }
 
     if (ApplyProfileChanges.length > 0 && !req.body.receiverAccountIds.includes(req.user.accountId)) {
         profile.rvn += 1;
         profile.commandRevision += 1;
         profile.updated = new Date().toISOString();
-
-        // await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile, [`profiles.athena`]: athena } });
 
         await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
     }
@@ -467,7 +338,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/RemoveGiftBox", verifyToken, as
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
@@ -475,11 +346,11 @@ app.post("/fortnite/api/game/v2/profile/*/client/RemoveGiftBox", verifyToken, as
 
     if (req.query.profileId != "common_core" && req.query.profileId != "profile0") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `RemoveGiftBox is not valid on ${req.query.profileId} profile`, 
+        `RemoveGiftBox is not valid on ${req.query.profileId} profile`,
         ["RemoveGiftBox",req.query.profileId], 12801, undefined, 400, res
     );
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     let ApplyProfileChanges = [];
     let BaseRevision = profile.rvn;
@@ -489,13 +360,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/RemoveGiftBox", verifyToken, as
     if (typeof req.body.giftBoxItemId == "string") {
         if (!profile.items[req.body.giftBoxItemId]) return error.createError(
             "errors.com.epicgames.fortnite.id_invalid",
-            `Item (id: '${req.body.giftBoxItemId}') not found`, 
+            `Item (id: '${req.body.giftBoxItemId}') not found`,
             [req.body.giftBoxItemId], 16027, undefined, 400, res
         );
 
         if (!profile.items[req.body.giftBoxItemId].templateId.startsWith("GiftBox:")) return error.createError(
             "errors.com.epicgames.fortnite.id_invalid",
-            `The specified item id is not a giftbox.`, 
+            `The specified item id is not a giftbox.`,
             [req.body.giftBoxItemId], 16027, undefined, 400, res
         );
 
@@ -512,9 +383,9 @@ app.post("/fortnite/api/game/v2/profile/*/client/RemoveGiftBox", verifyToken, as
             if (typeof giftBoxItemId != "string") continue;
             if (!profile.items[giftBoxItemId]) continue;
             if (!profile.items[giftBoxItemId].templateId.startsWith("GiftBox:")) continue;
-    
+
             delete profile.items[giftBoxItemId];
-    
+
             ApplyProfileChanges.push({
                 "changeType": "itemRemoved",
                 "itemId": giftBoxItemId
@@ -548,14 +419,118 @@ app.post("/fortnite/api/game/v2/profile/*/client/RemoveGiftBox", verifyToken, as
     });
 });
 
+app.post("/fortnite/api/game/v2/profile/*/client/RefundMtxPurchase", verifyToken, async (req, res) => {
+    const profiles = await Profile.findOne({ accountId: req.params[0] });
+    let profile = profiles.profiles[req.query.profileId];
+    const ItemProfile = profiles.profiles.athena;
 
+    const memory = Version.GetVersionInfo(req);
+
+    var ApplyProfileChanges = [];
+    var MultiUpdate = [];
+    var BaseRevision = profile.rvn || 0;
+    var QueryRevision = req.query.rvn || -1;
+    let ProfileRevisionCheck = (memory.build >= 12.20) ? profile.commandRevision : profile.rvn;
+
+    var ItemGuids = [];
+
+    if (req.body.purchaseId) {
+        MultiUpdate.push({
+            "profileRevision": ItemProfile.rvn || 0,
+            "profileId": "athena",
+            "profileChangesBaseRevision": ItemProfile.rvn || 0,
+            "profileChanges": [],
+            "profileCommandRevision": ItemProfile.commandRevision || 0,
+        })
+
+        profile.stats.attributes.mtx_purchase_history.refundsUsed += 1;
+        profile.stats.attributes.mtx_purchase_history.refundCredits -= 1;
+
+        for (var i in profile.stats.attributes.mtx_purchase_history.purchases) {
+            if (profile.stats.attributes.mtx_purchase_history.purchases[i].purchaseId == req.body.purchaseId) {
+                for (var x in profile.stats.attributes.mtx_purchase_history.purchases[i].lootResult) {
+                    ItemGuids.push(profile.stats.attributes.mtx_purchase_history.purchases[i].lootResult[x].itemGuid)
+                }
+
+                profile.stats.attributes.mtx_purchase_history.purchases[i].refundDate = new Date().toISOString();
+
+                for (var key in profile.items) {
+                    if (profile.items[key].templateId.toLowerCase().startsWith("currency:mtx")) {
+                        if (profile.items[key].attributes.platform.toLowerCase() == profile.stats.attributes.current_mtx_platform.toLowerCase() || profile.items[key].attributes.platform.toLowerCase() == "shared") {
+                            profile.items[key].quantity += profile.stats.attributes.mtx_purchase_history.purchases[i].totalMtxPaid;
+
+                            ApplyProfileChanges.push({
+                                "changeType": "itemQuantityChanged",
+                                "itemId": key,
+                                "quantity": profile.items[key].quantity
+                            })
+
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (var i in ItemGuids) {
+            try {
+                delete ItemProfile.items[ItemGuids[i]]
+
+                MultiUpdate[0].profileChanges.push({
+                    "changeType": "itemRemoved",
+                    "itemId": ItemGuids[i]
+                })
+            } catch (err) {}
+        }
+
+        ItemProfile.rvn += 1;
+        ItemProfile.commandRevision += 1;
+        profile.rvn += 1;
+        profile.commandRevision += 1;
+
+        StatChanged = true;
+    }
+
+    if (ApplyProfileChanges.length > 0) {
+
+        ApplyProfileChanges.push({
+            "changeType": "statModified",
+            "name": "mtx_purchase_history",
+            "value": profile.stats.attributes.mtx_purchase_history
+        })
+
+        MultiUpdate[0].profileRevision = ItemProfile.rvn || 0;
+        MultiUpdate[0].profileCommandRevision = ItemProfile.commandRevision || 0;
+
+        await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile} });
+        await profiles.updateOne({ $set: { [`profiles.athena`]: ItemProfile} });
+    }
+
+    if (QueryRevision != ProfileRevisionCheck) {
+        ApplyProfileChanges = [{
+            "changeType": "fullProfileUpdate",
+            "profile": profile
+        }];
+    }
+
+    res.json({
+        profileRevision: profile.rvn || 0,
+        profileId: req.query.profileId,
+        profileChangesBaseRevision: BaseRevision,
+        profileChanges: ApplyProfileChanges,
+        profileCommandRevision: profile.commandRevision || 0,
+        serverTime: new Date().toISOString(),
+        multiUpdate: MultiUpdate,
+        responseVersion: 1
+    })
+});
 
 app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyToken, async (req, res) => {
     const profiles = await Profile.findOne({ accountId: req.user.accountId });
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
@@ -564,7 +539,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
 
     if (req.query.profileId != "common_core" && req.query.profileId != "profile0") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `PurchaseCatalogEntry is not valid on ${req.query.profileId} profile`, 
+        `PurchaseCatalogEntry is not valid on ${req.query.profileId} profile`,
         ["PurchaseCatalogEntry",req.query.profileId], 12801, undefined, 400, res
     );
 
@@ -576,7 +551,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
         "profileCommandRevision": athena.commandRevision || 0,
     }];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     let Notifications = [];
     let ApplyProfileChanges = [];
@@ -603,12 +578,595 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
     if (!profile.items) profile.items = {};
     if (!athena.items) athena.items = {};
 
-    let findOfferId = functions.getOfferID(req.body.offerId);
+    let findOfferId = items.getOfferID(req.body.offerId);
     if (!findOfferId) return error.createError(
         "errors.com.epicgames.fortnite.id_invalid",
-        `Offer ID (id: '${req.body.offerId}') not found`, 
+        `Offer ID (id: '${req.body.offerId}') not found`,
         [req.body.offerId], 16027, undefined, 400, res
     );
+
+    let season = memory.season
+    let BattlePass = JSON.parse(fs.readFileSync(path.join(__dirname, "../responses/BattlePass/", `season${season}.json`), "utf8"));
+    let ItemExists = false
+
+    if(!BattlePass) return error.createError(
+        "errors.com.epicgames.fortnite.id_invalid",
+        `Bruh you maybe on the wrong season.`,
+        [req.body.offerId], 16027, undefined, 400, res
+    );
+
+    if (req.body.offerId == BattlePass.battlePassOfferId || req.body.offerId == BattlePass.battleBundleOfferId || req.body.offerId == BattlePass.tierOfferId) {
+        let offerId = req.body.offerId;
+        let totalCost = findOfferId.offerId.prices[0].finalPrice;
+
+        if (offerId == BattlePass.tierOfferId) {
+            const levelsToPurchase = req.body.purchaseQuantity || 1;
+            const costPerLevel = 150;
+            totalCost = costPerLevel * levelsToPurchase;
+        }
+
+        if (findOfferId.offerId.prices[0].currencyType.toLowerCase() == "mtxcurrency") {
+            let paid = false;
+
+            for (let key in profile.items) {
+                if (!profile.items[key].templateId.toLowerCase().startsWith("currency:mtx")) continue;
+
+                let currencyPlatform = profile.items[key].attributes.platform;
+                if ((currencyPlatform.toLowerCase() != profile.stats.attributes.current_mtx_platform.toLowerCase()) && (currencyPlatform.toLowerCase() != "shared")) continue;
+
+                if (profile.items[key].quantity < totalCost) {
+                    return error.createError(
+                        "errors.com.epicgames.currency.mtx.insufficient",
+                        `You cannot afford this item (${totalCost}), you only have ${profile.items[key].quantity}.`,
+                        [`${totalCost}`, `${profile.items[key].quantity}`], 1040, undefined, 400, res
+                    );
+                }
+
+                profile.items[key].quantity -= totalCost;
+                paid = true;
+                ApplyProfileChanges.push({
+                    "changeType": "itemQuantityChanged",
+                    "itemId": key,
+                    "quantity": profile.items[key].quantity
+                });
+
+                paid = true;
+                break;
+            }
+
+            if (!paid && findOfferId.offerId.prices[0].finalPrice > 0) {
+                return error.createError(
+                    "errors.com.epicgames.currency.mtx.insufficient",
+                    `You cannot afford this item (${findOfferId.offerId.prices[0].finalPrice}).`,
+                    [`${findOfferId.offerId.prices[0].finalPrice}`], 1040, undefined, 400, res
+                );
+            }
+        }
+
+
+        if (BattlePass.battlePassOfferId == offerId || BattlePass.battleBundleOfferId == offerId) {
+            var lootList = [];
+            var EndingTier = athena.stats.attributes.book_level;
+            athena.stats.attributes.book_purchased = true;
+
+            if (BattlePass.battleBundleOfferId == offerId) {
+
+                athena.stats.attributes.book_level += 25;
+                if (athena.stats.attributes.book_level > 100) {
+                    athena.stats.attributes.book_level = 100;
+                }
+                EndingTier = athena.stats.attributes.book_level;
+
+                athena.stats.attributes.level = athena.stats.attributes.book_level;
+            }
+            for (var i = 0; i < EndingTier; i++) {
+                var FreeTier = BattlePass.freeRewards[i] || {};
+                var PaidTier = BattlePass.paidRewards[i] || {};
+
+                for (var item in FreeTier) {
+                    if (item.toLowerCase() == "token:athenaseasonxpboost") {
+                        athena.stats.attributes.season_match_boost += FreeTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_match_boost",
+                            "value": athena.stats.attributes.season_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase() == "token:athenaseasonfriendxpboost") {
+                        athena.stats.attributes.season_friend_match_boost += FreeTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_friend_match_boost",
+                            "value": athena.stats.attributes.season_friend_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase().startsWith("currency:mtx")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase().startsWith("currency:mtx")) {
+                                if (profile.items[key].attributes.platform.toLowerCase() == profile.stats.attributes.current_mtx_platform.toLowerCase() || profile.items[key].attributes.platform.toLowerCase() == "shared") {
+                                    profile.items[key].attributes.quantity += FreeTier[item];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (item.toLowerCase().startsWith("homebasebanner")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                profile.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                ApplyProfileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": profile.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            var Item = { "templateId": item, "attributes": { "item_seen": false }, "quantity": 1 };
+
+                            profile.items[ItemID] = Item;
+
+                            ApplyProfileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    if (item.toLowerCase().startsWith("athena")) {
+                        for (var key in athena.items) {
+                            if (athena.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                athena.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                MultiUpdate[0].profileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": athena.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            const Item = { "templateId": item, "attributes": { "max_level_bonus": 0, "level": 1, "item_seen": false, "xp": 0, "variants": [], "favorite": false }, "quantity": FreeTier[item] }
+
+                            athena.items[ItemID] = Item;
+
+                            MultiUpdate[0].profileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    lootList.push({
+                        "itemType": item,
+                        "itemGuid": item,
+                        "quantity": FreeTier[item]
+                    })
+                }
+
+                for (var item in PaidTier) {
+                    if (item.toLowerCase() == "token:athenaseasonxpboost") {
+                        athena.stats.attributes.season_match_boost += PaidTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_match_boost",
+                            "value": athena.stats.attributes.season_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase() == "token:athenaseasonfriendxpboost") {
+                        athena.stats.attributes.season_friend_match_boost += PaidTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_friend_match_boost",
+                            "value": athena.stats.attributes.season_friend_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase().startsWith("currency:mtx")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase().startsWith("currency:mtx")) {
+                                if (profile.items[key].attributes.platform.toLowerCase() == profile.stats.attributes.current_mtx_platform.toLowerCase() || profile.items[key].attributes.platform.toLowerCase() == "shared") {
+                                    profile.items[key].quantity += PaidTier[item];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (item.toLowerCase().startsWith("homebasebanner")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                profile.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                ApplyProfileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": profile.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            var Item = { "templateId": item, "attributes": { "item_seen": false }, "quantity": 1 };
+
+                            profile.items[ItemID] = Item;
+
+                            ApplyProfileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+                        ItemExists = false;
+                    }
+
+                    if (item.toLowerCase().startsWith("athena")) {
+                        for (var key in athena.items) {
+                            if (athena.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                athena.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                MultiUpdate[0].profileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": athena.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            const Item = { "templateId": item, "attributes": { "max_level_bonus": 0, "level": 1, "item_seen": false, "xp": 0, "variants": [], "favorite": false }, "quantity": PaidTier[item] }
+
+                            athena.items[ItemID] = Item;
+
+                            MultiUpdate[0].profileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    lootList.push({
+                        "itemType": item,
+                        "itemGuid": item,
+                        "quantity": PaidTier[item]
+                    })
+                }
+            }
+
+            var GiftBoxID = id.MakeID();
+            var GiftBox = { "templateId": 8 <= 4 ? "GiftBox:gb_battlepass" : "GiftBox:gb_battlepasspurchased", "attributes": { "max_level_bonus": 0, "fromAccountId": "", "lootList": lootList } }
+
+            if (8 > 2) {
+                profile.items[GiftBoxID] = GiftBox;
+
+                ApplyProfileChanges.push({
+                    "changeType": "itemAdded",
+                    "itemId": GiftBoxID,
+                    "item": GiftBox
+                })
+            }
+
+            MultiUpdate[0].profileChanges.push({
+                "changeType": "statModified",
+                "name": "book_purchased",
+                "value": athena.stats.attributes.book_purchased
+            })
+            MultiUpdate[0].profileChanges.push({
+                "changeType": "statModified",
+                "name": "level",
+                "value": athena.stats.attributes.level
+            })
+
+            MultiUpdate[0].profileChanges.push({
+                "changeType": "statModified",
+                "name": "book_level",
+                "value": athena.stats.attributes.book_level
+            })
+        }
+
+        if (BattlePass.tierOfferId == offerId) {
+            var lootList = [];
+            var StartingTier = athena.stats.attributes.book_level;
+            var EndingTier;
+
+
+            athena.stats.attributes.book_level += req.body.purchaseQuantity || 1;
+            if (athena.stats.attributes.book_level > 100) {
+                athena.stats.attributes.book_level = 100;
+            }
+            EndingTier = athena.stats.attributes.book_level;
+
+
+            athena.stats.attributes.level = athena.stats.attributes.book_level;
+
+            for (let i = StartingTier; i < EndingTier; i++) {
+                var FreeTier = BattlePass.freeRewards[i] || {};
+                var PaidTier = BattlePass.paidRewards[i] || {};
+
+                for (var item in FreeTier) {
+                    if (item.toLowerCase() == "token:athenaseasonxpboost") {
+                        athena.stats.attributes.season_match_boost += FreeTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_match_boost",
+                            "value": athena.stats.attributes.season_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase() == "token:athenaseasonfriendxpboost") {
+                        athena.stats.attributes.season_friend_match_boost += FreeTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_friend_match_boost",
+                            "value": athena.stats.attributes.season_friend_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase().startsWith("currency:mtx")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase().startsWith("currency:mtx")) {
+                                if (profile.items[key].attributes.platform.toLowerCase() == profile.stats.attributes.current_mtx_platform.toLowerCase() || profile.items[key].attributes.platform.toLowerCase() == "shared") {
+                                    profile.items[key].quantity += FreeTier[item];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (item.toLowerCase().startsWith("homebasebanner")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                profile.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                ApplyProfileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": profile.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            var Item = { "templateId": item, "attributes": { "item_seen": false }, "quantity": 1 };
+
+                            profile.items[ItemID] = Item;
+
+                            ApplyProfileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    if (item.toLowerCase().startsWith("athena")) {
+                        for (var key in athena.items) {
+                            if (athena.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                athena.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                MultiUpdate[0].profileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": athena.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            const Item = { "templateId": item, "attributes": { "max_level_bonus": 0, "level": 1, "item_seen": false, "xp": 0, "variants": [], "favorite": false }, "quantity": FreeTier[item] }
+
+                            athena.items[ItemID] = Item;
+
+                            MultiUpdate[0].profileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    lootList.push({
+                        "itemType": item,
+                        "itemGuid": item,
+                        "quantity": FreeTier[item]
+                    })
+                }
+
+                for (var item in PaidTier) {
+                    if (item.toLowerCase() == "token:athenaseasonxpboost") {
+                        athena.stats.attributes.season_match_boost += PaidTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_match_boost",
+                            "value": athena.stats.attributes.season_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase() == "token:athenaseasonfriendxpboost") {
+                        athena.stats.attributes.season_friend_match_boost += PaidTier[item];
+
+                        MultiUpdate[0].profileChanges.push({
+                            "changeType": "statModified",
+                            "name": "season_friend_match_boost",
+                            "value": athena.stats.attributes.season_friend_match_boost
+                        })
+                    }
+
+                    if (item.toLowerCase().startsWith("currency:mtx")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase().startsWith("currency:mtx")) {
+                                if (profile.items[key].attributes.platform.toLowerCase() == profile.stats.attributes.current_mtx_platform.toLowerCase() || profile.items[key].attributes.platform.toLowerCase() == "shared") {
+                                    profile.items[key].quantity += PaidTier[item];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (item.toLowerCase().startsWith("homebasebanner")) {
+                        for (var key in profile.items) {
+                            if (profile.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                profile.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                ApplyProfileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": profile.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            var Item = { "templateId": item, "attributes": { "item_seen": false }, "quantity": 1 };
+
+                            profile.items[ItemID] = Item;
+
+                            ApplyProfileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    if (item.toLowerCase().startsWith("athena")) {
+                        for (var key in athena.items) {
+                            if (athena.items[key].templateId.toLowerCase() == item.toLowerCase()) {
+                                athena.items[key].attributes.item_seen = false;
+                                ItemExists = true;
+
+                                MultiUpdate[0].profileChanges.push({
+                                    "changeType": "itemAttrChanged",
+                                    "itemId": key,
+                                    "attributeName": "item_seen",
+                                    "attributeValue": athena.items[key].attributes.item_seen
+                                })
+                            }
+                        }
+
+                        if (ItemExists == false) {
+                            var ItemID = id.MakeID();
+                            const Item = { "templateId": item, "attributes": { "max_level_bonus": 0, "level": 1, "item_seen": false, "xp": 0, "variants": [], "favorite": false }, "quantity": PaidTier[item] }
+
+                            athena.items[ItemID] = Item;
+
+                            MultiUpdate[0].profileChanges.push({
+                                "changeType": "itemAdded",
+                                "itemId": ItemID,
+                                "item": Item
+                            })
+                        }
+
+                        ItemExists = false;
+                    }
+
+                    lootList.push({
+                        "itemType": item,
+                        "itemGuid": item,
+                        "quantity": PaidTier[item]
+                    })
+                }
+            }
+
+            var GiftBoxID = id.MakeID();
+            var GiftBox = { "templateId": "GiftBox:gb_battlepass", "attributes": { "max_level_bonus": 0, "fromAccountId": "", "lootList": lootList } }
+
+            if (8 > 2) {
+                profile.items[GiftBoxID] = GiftBox;
+
+                ApplyProfileChanges.push({
+                    "changeType": "itemAdded",
+                    "itemId": GiftBoxID,
+                    "item": GiftBox
+                })
+            }
+            MultiUpdate[0].profileChanges.push({
+                "changeType": "statModified",
+                "name": "level",
+                "value": athena.stats.attributes.level
+            })
+
+            MultiUpdate[0].profileChanges.push({
+                "changeType": "statModified",
+                "name": "book_level",
+                "value": athena.stats.attributes.book_level
+            })
+        }
+
+        if (MultiUpdate[0].profileChanges.length > 0) {
+            athena.rvn += 1;
+            athena.commandRevision += 1;
+            athena.updated = new Date().toISOString();
+
+            MultiUpdate[0].profileRevision = athena.rvn;
+            MultiUpdate[0].profileCommandRevision = athena.commandRevision;
+        }
+
+        if (ApplyProfileChanges.length > 0) {
+            profile.rvn += 1;
+            profile.commandRevision += 1;
+            profile.updated = new Date().toISOString();
+
+            await profiles?.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile, [`profiles.athena`]: athena } });
+        }
+
+        if (QueryRevision != ProfileRevisionCheck) {
+            ApplyProfileChanges = [{
+                "changeType": "fullProfileUpdate",
+                "profile": profile
+            }];
+        }
+    }
 
     switch (true) {
         case /^BR(Daily|Weekly|Season)Storefront$/.test(findOfferId.name):
@@ -621,7 +1179,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
             });
 
             for (let value of findOfferId.offerId.itemGrants) {
-                const ID = functions.MakeID();
+                const ID = id.MakeID();
 
                 for (let itemId in athena.items) {
                     if (value.templateId.toLowerCase() == athena.items[itemId].templateId.toLowerCase()) return error.createError(
@@ -639,15 +1197,15 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
                     },
                     "quantity": 1
                 };
-        
+
                 athena.items[ID] = Item;
-        
+
                 MultiUpdate[0].profileChanges.push({
                     "changeType": "itemAdded",
                     "itemId": ID,
                     "item": athena.items[ID]
                 });
-        
+
                 Notifications[0].lootResult.items.push({
                     "itemType": Item.templateId,
                     "itemGuid": ID,
@@ -672,15 +1230,15 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
                     );
 
                     profile.items[key].quantity -= findOfferId.offerId.prices[0].finalPrice;
-                        
+
                     ApplyProfileChanges.push({
                         "changeType": "itemQuantityChanged",
                         "itemId": key,
                         "quantity": profile.items[key].quantity
                     });
-        
+
                     paid = true;
-        
+
                     break;
                 }
 
@@ -689,6 +1247,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
                     `You can not afford this item (${findOfferId.offerId.prices[0].finalPrice}).`,
                     [`${findOfferId.offerId.prices[0].finalPrice}`], 1040, undefined, 400, res
                 );
+
+                if (findOfferId.offerId.itemGrants.length != 0) {
+
+                    var purchaseId = id.MakeID();
+                    profile.stats.attributes.mtx_purchase_history.purchases.push({"purchaseId":purchaseId,"offerId":`v2:/${purchaseId}`,"purchaseDate":new Date().toISOString(),"freeRefundEligible":false,"fulfillments":[],"lootResult":Notifications[0].lootResult.items,"totalMtxPaid":findOfferId.offerId.prices[0].finalPrice,"metadata":{},"gameContext":""})
+
+                    ApplyProfileChanges.push({
+                        "changeType": "statModified",
+                        "name": "mtx_purchase_history",
+                        "value": profile.stats.attributes.mtx_purchase_history
+                    })
+                }
+
             }
 
             if (MultiUpdate[0].profileChanges.length > 0) {
@@ -699,7 +1270,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
                 MultiUpdate[0].profileRevision = athena.rvn;
                 MultiUpdate[0].profileCommandRevision = athena.commandRevision;
             }
-        break;
+            break;
     }
 
     if (ApplyProfileChanges.length > 0) {
@@ -730,18 +1301,483 @@ app.post("/fortnite/api/game/v2/profile/*/client/PurchaseCatalogEntry", verifyTo
     });
 });
 
-app.post("/fortnite/api/game/v2/profile/*/client/MarkItemSeen", verifyToken, async (req, res) => {
-    const profiles = await Profile.findOne({ accountId: req.user.accountId });
+app.post("/fortnite/api/game/v2/profile/*/client/FortRerollDailyQuest", async (req, res) => {
+    const profiles = await Profile.findOne({ accountId: req.params[0] });
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
     let profile = profiles.profiles[req.query.profileId];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
+
+  //  var DailyQuestIDS = JSON.parse(JSON.stringify(require("../shop/Quests.json")));
+    var ApplyProfileChanges = [];
+    var Notifications = [];
+    var BaseRevision = profile.rvn;
+    var ProfileRevisionCheck = (memory.build >= 12.20) ? profile.commandRevision : profile.rvn;
+    var QueryRevision = req.query.rvn || -1;
+    var StatChanged = false;
+
+    if (req.query.profileId == "athena") {
+        DailyQuestIDS = DailyQuestIDS.BattleRoyale.Daily
+    }
+
+    const NewQuestID = Version.MakeID();
+    var randomNumber = Math.floor(Math.random() * DailyQuestIDS.length);
+
+    for (var key in profile.items) {
+        while (DailyQuestIDS[randomNumber].templateId.toLowerCase() == profile.items[key].templateId.toLowerCase()) {
+            randomNumber = Math.floor(Math.random() * DailyQuestIDS.length);
+        }
+    }
+
+    if (req.body.questId && profile.stats.attributes.quest_manager.dailyQuestRerolls >= 1) {
+        profile.stats.attributes.quest_manager.dailyQuestRerolls -= 1;
+
+        delete profile.items[req.body.questId];
+
+        profile.items[NewQuestID] = {
+            "templateId": DailyQuestIDS[randomNumber].templateId,
+            "attributes": {
+                "creation_time": new Date().toISOString(),
+                "level": -1,
+                "item_seen": false,
+                "playlists": [],
+                "sent_new_notification": false,
+                "challenge_bundle_id": "",
+                "xp_reward_scalar": 1,
+                "challenge_linked_quest_given": "",
+                "quest_pool": "",
+                "quest_state": "Active",
+                "bucket": "",
+                "last_state_change_time": new Date().toISOString(),
+                "challenge_linked_quest_parent": "",
+                "max_level_bonus": 0,
+                "xp": 0,
+                "quest_rarity": "uncommon",
+                "favorite": false
+            },
+            "quantity": 1
+        };
+
+        for (var i in DailyQuestIDS[randomNumber].objectives) {
+            profile.items[NewQuestID].attributes[`completion_${DailyQuestIDS[randomNumber].objectives[i].toLowerCase()}`] = 0
+        }
+
+        StatChanged = true;
+    }
+
+    if (StatChanged == true) {
+        profile.rvn += 1;
+        profile.commandRevision += 1;
+
+        ApplyProfileChanges.push({
+            "changeType": "statModified",
+            "name": "quest_manager",
+            "value": profile.stats.attributes.quest_manager
+        })
+
+        ApplyProfileChanges.push({
+            "changeType": "itemAdded",
+            "itemId": NewQuestID,
+            "item": profile.items[NewQuestID]
+        })
+
+        ApplyProfileChanges.push({
+            "changeType": "itemRemoved",
+            "itemId": req.body.questId
+        })
+
+        Notifications.push({
+            "type": "dailyQuestReroll",
+            "primary": true,
+            "newQuestId": DailyQuestIDS[randomNumber].templateId
+        })
+
+        await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
+    }
+
+    if (QueryRevision != ProfileRevisionCheck) {
+        ApplyProfileChanges = [{
+            "changeType": "fullProfileUpdate",
+            "profile": profile
+        }];
+    }
+
+    res.json({
+        profileRevision: profile.rvn || 0,
+        profileId: req.query.profileId,
+        profileChangesBaseRevision: BaseRevision,
+        profileChanges: ApplyProfileChanges,
+        notifications: Notifications,
+        profileCommandRevision: profile.commandRevision || 0,
+        serverTime: new Date().toISOString(),
+        responseVersion: 1
+    });
+});
+
+
+app.post("/fortnite/api/game/v2/profile/*/client/MarkNewQuestNotificationSent", async (req, res) => {
+    const profiles = await Profile.findOne({ accountId: req.params[0] });;
+    if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
+        "errors.com.epicgames.modules.profiles.operation_forbidden",
+        `Unable to find template configuration for profile ${req.query.profileId}`,
+        [req.query.profileId], 12813, undefined, 403, res
+    );
+
+    let profile = profiles.profiles[req.query.profileId];
+
+    const memory = Version.GetVersionInfo(req);
+
+
+    var ApplyProfileChanges = [];
+    var BaseRevision = profile.rvn;
+    var ProfileRevisionCheck = (memory.build >= 12.20) ? profile.commandRevision : profile.rvn;
+    var QueryRevision = req.query.rvn || -1;
+    var StatChanged = false;
+
+    if (req.body.itemIds) {
+        for (var i in req.body.itemIds) {
+            var id = req.body.itemIds[i];
+
+            profile.items[id].attributes.sent_new_notification = true
+
+            ApplyProfileChanges.push({
+                "changeType": "itemAttrChanged",
+                "itemId": id,
+                "attributeName": "sent_new_notification",
+                "attributeValue": true
+            })
+        }
+
+        StatChanged = true;
+    }
+
+    if (StatChanged == true) {
+        profile.rvn += 1;
+        profile.commandRevision += 1;
+
+        await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
+    }
+
+    if (QueryRevision != ProfileRevisionCheck) {
+        ApplyProfileChanges = [{
+            "changeType": "fullProfileUpdate",
+            "profile": profile
+        }];
+    }
+
+    res.json({
+        profileRevision: profile.rvn || 0,
+        profileId: req.query.profileId,
+        profileChangesBaseRevision: BaseRevision,
+        profileChanges: ApplyProfileChanges,
+        notifications: Notifications,
+        profileCommandRevision: profile.commandRevision || 0,
+        serverTime: new Date().toISOString(),
+        multiUpdate: MultiUpdate,
+        responseVersion: 1
+    });
+});
+
+
+app.post("/fortnite/api/game/v2/profile/*/client/ClientQuestLogin", async (req, res) => {
+    const profiles = await Profile.findOne({ accountId: req.params[0] });
+
+    if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
+        "errors.com.epicgames.modules.profiles.operation_forbidden",
+        `Unable to find template configuration for profile ${req.query.profileId}`,
+        [req.query.profileId], 12813, undefined, 403, res
+    );
+
+    let profile = profiles.profiles[req.query.profileId];
+
+
+    //var QuestIDS = JSON.parse(JSON.stringify(require("../shop/Quests.json")));
+    const memory = Version.GetVersionInfo(req);
+
+    var ApplyProfileChanges = [];
+    var BaseRevision = profile.rvn;
+    var ProfileRevisionCheck = (memory.build >= 12.20) ? profile.commandRevision : profile.rvn;
+    var QueryRevision = req.query.rvn || -1;
+    var StatChanged = false;
+
+    var QuestCount = 0;
+    let ShouldGiveQuest = true;
+    let DateFormat = (new Date().toISOString()).split("T")[0];
+    var DailyQuestIDS;
+    var SeasonQuestIDS;
+
+    try {
+        if (req.query.profileId == "athena") {
+            DailyQuestIDS = QuestIDS.BattleRoyale.Daily
+
+            if (QuestIDS.BattleRoyale.hasOwnProperty(`Season${memory.season}`)) {
+                SeasonQuestIDS = QuestIDS.BattleRoyale[`Season${memory.season}`]
+            }
+
+            for (var key in profile.items) {
+                if (profile.items[key].templateId.toLowerCase().startsWith("quest:athenadaily")) {
+                    QuestCount += 1;
+                }
+            }
+        }
+
+        if (profile.stats.attributes.hasOwnProperty("quest_manager")) {
+            if (profile.stats.attributes.quest_manager.hasOwnProperty("dailyLoginInterval")) {
+                if (profile.stats.attributes.quest_manager.dailyLoginInterval.includes("T")) {
+                    var DailyLoginDate = (profile.stats.attributes.quest_manager.dailyLoginInterval).split("T")[0];
+
+                    if (DailyLoginDate == DateFormat) {
+                        ShouldGiveQuest = false;
+                    } else {
+                        ShouldGiveQuest = true;
+                        if (profile.stats.attributes.quest_manager.dailyQuestRerolls <= 0) {
+                            profile.stats.attributes.quest_manager.dailyQuestRerolls += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (QuestCount < 3 && ShouldGiveQuest == true) {
+            const NewQuestID = functions.MakeID();
+            var randomNumber = Math.floor(Math.random() * DailyQuestIDS.length);
+
+            for (var key in profile.items) {
+                while (DailyQuestIDS[randomNumber].templateId.toLowerCase() == profile.items[key].templateId.toLowerCase()) {
+                    randomNumber = Math.floor(Math.random() * DailyQuestIDS.length);
+                }
+            }
+
+            profile.items[NewQuestID] = {
+                "templateId": DailyQuestIDS[randomNumber].templateId,
+                "attributes": {
+                    "creation_time": new Date().toISOString(),
+                    "level": -1,
+                    "item_seen": false,
+                    "playlists": [],
+                    "sent_new_notification": false,
+                    "challenge_bundle_id": "",
+                    "xp_reward_scalar": 1,
+                    "challenge_linked_quest_given": "",
+                    "quest_pool": "",
+                    "quest_state": "Active",
+                    "bucket": "",
+                    "last_state_change_time": new Date().toISOString(),
+                    "challenge_linked_quest_parent": "",
+                    "max_level_bonus": 0,
+                    "xp": 0,
+                    "quest_rarity": "uncommon",
+                    "favorite": false
+                },
+                "quantity": 1
+            };
+
+            for (var i in DailyQuestIDS[randomNumber].objectives) {
+                profile.items[NewQuestID].attributes[`completion_${DailyQuestIDS[randomNumber].objectives[i].toLowerCase()}`] = 0
+            }
+
+            profile.stats.attributes.quest_manager.dailyLoginInterval = new Date().toISOString();
+
+            ApplyProfileChanges.push({
+                "changeType": "itemAdded",
+                "itemId": NewQuestID,
+                "item": profile.items[NewQuestID]
+            })
+
+            ApplyProfileChanges.push({
+                "changeType": "statModified",
+                "name": "quest_manager",
+                "value": profile.stats.attributes.quest_manager
+            })
+
+            StatChanged = true;
+        }
+    } catch (err) {}
+
+    for (var key in profile.items) {
+        if (key.split("")[0] == "S" && (Number.isInteger(Number(key.split("")[1]))) && (key.split("")[2] == "-" || (Number.isInteger(Number(key.split("")[2])) && key.split("")[3] == "-"))) {
+            if (!key.startsWith(`S${memory.season}-`)) {
+                delete profile.items[key];
+
+                ApplyProfileChanges.push({
+                    "changeType": "itemRemoved",
+                    "itemId": key
+                })
+
+                StatChanged = true;
+            }
+        }
+    }
+
+    if (SeasonQuestIDS) {
+        if (req.query.profileId == "athena") {
+            for (var ChallengeBundleSchedule in SeasonQuestIDS.ChallengeBundleSchedules) {
+                if (profile.items.hasOwnProperty(ChallengeBundleSchedule.itemGuid)) {
+                    ApplyProfileChanges.push({
+                        "changeType": "itemRemoved",
+                        "itemId": ChallengeBundleSchedule.itemGuid
+                    })
+                }
+
+                ChallengeBundleSchedule = SeasonQuestIDS.ChallengeBundleSchedules[ChallengeBundleSchedule];
+
+                profile.items[ChallengeBundleSchedule.itemGuid] = {
+                    "templateId": ChallengeBundleSchedule.templateId,
+                    "attributes": {
+                        "unlock_epoch": new Date().toISOString(),
+                        "max_level_bonus": 0,
+                        "level": 1,
+                        "item_seen": true,
+                        "xp": 0,
+                        "favorite": false,
+                        "granted_bundles": ChallengeBundleSchedule.granted_bundles
+                    },
+                    "quantity": 1
+                }
+
+                ApplyProfileChanges.push({
+                    "changeType": "itemAdded",
+                    "itemId": ChallengeBundleSchedule.itemGuid,
+                    "item": profile.items[ChallengeBundleSchedule.itemGuid]
+                })
+
+                StatChanged = true;
+            }
+
+            for (var ChallengeBundle in SeasonQuestIDS.ChallengeBundles) {
+                if (profile.items.hasOwnProperty(ChallengeBundle.itemGuid)) {
+                    ApplyProfileChanges.push({
+                        "changeType": "itemRemoved",
+                        "itemId": ChallengeBundle.itemGuid
+                    })
+                }
+
+                ChallengeBundle = SeasonQuestIDS.ChallengeBundles[ChallengeBundle];
+
+                profile.items[ChallengeBundle.itemGuid] = {
+                    "templateId": ChallengeBundle.templateId,
+                    "attributes": {
+                        "has_unlock_by_completion": false,
+                        "num_quests_completed": 0,
+                        "level": 0,
+                        "grantedquestinstanceids": ChallengeBundle.grantedquestinstanceids,
+                        "item_seen": true,
+                        "max_allowed_bundle_level": 0,
+                        "num_granted_bundle_quests": 0,
+                        "max_level_bonus": 0,
+                        "challenge_bundle_schedule_id": ChallengeBundle.challenge_bundle_schedule_id,
+                        "num_progress_quests_completed": 0,
+                        "xp": 0,
+                        "favorite": false
+                    },
+                    "quantity": 1
+                }
+
+                profile.items[ChallengeBundle.itemGuid].attributes.num_granted_bundle_quests = ChallengeBundle.grantedquestinstanceids.length;
+
+                ApplyProfileChanges.push({
+                    "changeType": "itemAdded",
+                    "itemId": ChallengeBundle.itemGuid,
+                    "item": profile.items[ChallengeBundle.itemGuid]
+                })
+
+                StatChanged = true;
+            }
+        }
+
+        for (var Quest in SeasonQuestIDS.Quests) {
+            if (profile.items.hasOwnProperty(Quest.itemGuid)) {
+                ApplyProfileChanges.push({
+                    "changeType": "itemRemoved",
+                    "itemId": Quest.itemGuid
+                })
+            }
+
+            Quest = SeasonQuestIDS.Quests[Quest];
+
+            profile.items[Quest.itemGuid] = {
+                "templateId": Quest.templateId,
+                "attributes": {
+                    "creation_time": new Date().toISOString(),
+                    "level": -1,
+                    "item_seen": true,
+                    "playlists": [],
+                    "sent_new_notification": true,
+                    "challenge_bundle_id": Quest.challenge_bundle_id || "",
+                    "xp_reward_scalar": 1,
+                    "challenge_linked_quest_given": "",
+                    "quest_pool": "",
+                    "quest_state": "Active",
+                    "bucket": "",
+                    "last_state_change_time": new Date().toISOString(),
+                    "challenge_linked_quest_parent": "",
+                    "max_level_bonus": 0,
+                    "xp": 0,
+                    "quest_rarity": "uncommon",
+                    "favorite": false
+                },
+                "quantity": 1
+            }
+
+            for (var i in Quest.objectives) {
+                profile.items[Quest.itemGuid].attributes[`completion_${Quest.objectives[i].name.toLowerCase()}`] = 0;
+            }
+
+
+            ApplyProfileChanges.push({
+                "changeType": "itemAdded",
+                "itemId": Quest.itemGuid,
+                "item": profile.items[Quest.itemGuid]
+            })
+
+            StatChanged = true;
+        }
+    }
+
+    if (StatChanged == true) {
+        profile.rvn += 1;
+        profile.commandRevision += 1;
+
+        await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
+    }
+
+    if (QueryRevision != ProfileRevisionCheck) {
+        ApplyProfileChanges = [{
+            "changeType": "fullProfileUpdate",
+            "profile": profile
+        }];
+    }
+
+    res.json({
+        profileRevision: profile.rvn || 0,
+        profileId: req.query.profileId,
+        profileChangesBaseRevision: BaseRevision,
+        profileChanges: ApplyProfileChanges,
+        profileCommandRevision: profile.commandRevision || 0,
+        serverTime: new Date().toISOString(),
+        responseVersion: 1
+    });
+});
+
+
+app.post("/fortnite/api/game/v2/profile/*/client/MarkItemSeen", verifyToken, async (req, res) => {
+    const profiles = await Profile.findOne({ accountId: req.user.accountId });
+
+    if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
+        "errors.com.epicgames.modules.profiles.operation_forbidden",
+        `Unable to find template configuration for profile ${req.query.profileId}`,
+        [req.query.profileId], 12813, undefined, 403, res
+    );
+
+    let profile = profiles.profiles[req.query.profileId];
+
+    const memory = Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -761,12 +1797,12 @@ app.post("/fortnite/api/game/v2/profile/*/client/MarkItemSeen", verifyToken, asy
     if (!Array.isArray(req.body.itemIds)) return ValidationError("itemIds", "an array", res);
 
     if (!profile.items) profile.items = {};
-    
+
     for (let i in req.body.itemIds) {
         if (!profile.items[req.body.itemIds[i]]) continue;
-        
+
         profile.items[req.body.itemIds[i]].attributes.item_seen = true;
-        
+
         ApplyProfileChanges.push({
             "changeType": "itemAttrChanged",
             "itemId": req.body.itemIds[i],
@@ -806,19 +1842,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetItemFavoriteStatusBatch", ve
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
     if (req.query.profileId != "athena") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `SetItemFavoriteStatusBatch is not valid on ${req.query.profileId} profile`, 
+        `SetItemFavoriteStatusBatch is not valid on ${req.query.profileId} profile`,
         ["SetItemFavoriteStatusBatch",req.query.profileId], 12801, undefined, 400, res
     );
 
     let profile = profiles.profiles[req.query.profileId];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -885,19 +1921,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetBattleRoyaleBanner", verifyT
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
     if (req.query.profileId != "athena") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `SetBattleRoyaleBanner is not valid on ${req.query.profileId} profile`, 
+        `SetBattleRoyaleBanner is not valid on ${req.query.profileId} profile`,
         ["SetBattleRoyaleBanner",req.query.profileId], 12801, undefined, 400, res
     );
 
     let profile = profiles.profiles[req.query.profileId];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -935,13 +1971,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetBattleRoyaleBanner", verifyT
 
     if (!HomebaseBannerIconID) return error.createError(
         "errors.com.epicgames.fortnite.item_not_found",
-        `Banner template 'HomebaseBannerIcon:${req.body.homebaseBannerIconId}' not found in profile`, 
+        `Banner template 'HomebaseBannerIcon:${req.body.homebaseBannerIconId}' not found in profile`,
         [`HomebaseBannerIcon:${req.body.homebaseBannerIconId}`], 16006, undefined, 400, res
     );
 
     if (!HomebaseBannerColorID) return error.createError(
         "errors.com.epicgames.fortnite.item_not_found",
-        `Banner template 'HomebaseBannerColor:${req.body.homebaseBannerColorId}' not found in profile`, 
+        `Banner template 'HomebaseBannerColor:${req.body.homebaseBannerColorId}' not found in profile`,
         [`HomebaseBannerColor:${req.body.homebaseBannerColorId}`], 16006, undefined, 400, res
     );
 
@@ -960,7 +1996,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetBattleRoyaleBanner", verifyT
         "name": "banner_icon",
         "value": profile.stats.attributes.banner_icon
     });
-    
+
     ApplyProfileChanges.push({
         "changeType": "statModified",
         "name": "banner_color",
@@ -998,19 +2034,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
     if (req.query.profileId != "athena") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `EquipBattleRoyaleCustomization is not valid on ${req.query.profileId} profile`, 
+        `EquipBattleRoyaleCustomization is not valid on ${req.query.profileId} profile`,
         ["EquipBattleRoyaleCustomization",req.query.profileId], 12801, undefined, 400, res
     );
 
     let profile = profiles.profiles[req.query.profileId];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -1048,13 +2084,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
         if (!specialCosmetics.includes(item)) {
             return error.createError(
                 "errors.com.epicgames.fortnite.id_invalid",
-                `Item (id: '${req.body.itemToSlot}') not found`, 
+                `Item (id: '${req.body.itemToSlot}') not found`,
                 [req.body.itemToSlot], 16027, undefined, 400, res
             );
         } else {
             if (!item.startsWith(`Athena${req.body.slotName}:`)) return error.createError(
                 "errors.com.epicgames.fortnite.id_invalid",
-                `Cannot slot item of type ${item.split(":")[0]} in slot of category ${req.body.slotName}`, 
+                `Cannot slot item of type ${item.split(":")[0]} in slot of category ${req.body.slotName}`,
                 [item.split(":")[0],req.body.slotName], 16027, undefined, 400, res
             );
         }
@@ -1063,7 +2099,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
     if (profile.items[req.body.itemToSlot]) {
         if (!profile.items[req.body.itemToSlot].templateId.startsWith(`Athena${req.body.slotName}:`)) return error.createError(
             "errors.com.epicgames.fortnite.id_invalid",
-            `Cannot slot item of type ${profile.items[req.body.itemToSlot].templateId.split(":")[0]} in slot of category ${req.body.slotName}`, 
+            `Cannot slot item of type ${profile.items[req.body.itemToSlot].templateId.split(":")[0]} in slot of category ${req.body.slotName}`,
             [profile.items[req.body.itemToSlot].templateId.split(":")[0],req.body.slotName], 16027, undefined, 400, res
         );
 
@@ -1096,7 +2132,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
 
     let activeLoadoutId = profile.stats.attributes.loadouts[profile.stats.attributes.active_loadout_index];
     let templateId = profile.items[req.body.itemToSlot] ? profile.items[req.body.itemToSlot].templateId : req.body.itemToSlot;
-    
+
     switch (req.body.slotName) {
         case "Dance":
             if (!profile.items[activeLoadoutId].attributes.locker_slots_data.slots[req.body.slotName]) break;
@@ -1113,7 +2149,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
                     "value": profile.stats.attributes["favorite_dance"]
                 });
             }
-        break;
+            break;
 
         case "ItemWrap":
             if (!profile.items[activeLoadoutId].attributes.locker_slots_data.slots[req.body.slotName]) break;
@@ -1130,7 +2166,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
                         "name": "favorite_itemwraps",
                         "value": profile.stats.attributes["favorite_itemwraps"]
                     });
-                break;
+                    break;
 
                 case req.body.indexWithinSlot == -1:
                     for (let i = 0; i < 7; i++) {
@@ -1143,9 +2179,9 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
                         "name": "favorite_itemwraps",
                         "value": profile.stats.attributes["favorite_itemwraps"]
                     });
-                break;
+                    break;
             }
-        break;
+            break;
 
         default:
             if (!slotNames.includes(req.body.slotName)) break;
@@ -1154,7 +2190,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
             if (req.body.slotName == "Pickaxe" || req.body.slotName == "Glider") {
                 if (!req.body.itemToSlot) return error.createError(
                     "errors.com.epicgames.fortnite.id_invalid",
-                    `${req.body.slotName} can not be empty.`, 
+                    `${req.body.slotName} can not be empty.`,
                     [req.body.slotName], 16027, undefined, 400, res
                 );
             }
@@ -1167,7 +2203,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/EquipBattleRoyaleCustomization"
                 "name": (`favorite_${req.body.slotName}`).toLowerCase(),
                 "value": profile.stats.attributes[(`favorite_${req.body.slotName}`).toLowerCase()]
             });
-        break;
+            break;
     }
 
     if (ApplyProfileChanges.length > 0) {
@@ -1201,19 +2237,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerBanner", verif
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
     if (req.query.profileId != "athena") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `SetCosmeticLockerBanner is not valid on ${req.query.profileId} profile`, 
+        `SetCosmeticLockerBanner is not valid on ${req.query.profileId} profile`,
         ["SetCosmeticLockerBanner",req.query.profileId], 12801, undefined, 400, res
     );
 
     let profile = profiles.profiles[req.query.profileId];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory =  Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -1238,13 +2274,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerBanner", verif
 
     if (!profile.items[req.body.lockerItem]) return error.createError(
         "errors.com.epicgames.fortnite.id_invalid",
-        `Item (id: '${req.body.lockerItem}') not found`, 
+        `Item (id: '${req.body.lockerItem}') not found`,
         [req.body.lockerItem], 16027, undefined, 400, res
     );
 
     if (profile.items[req.body.lockerItem].templateId.toLowerCase() != "cosmeticlocker:cosmeticlocker_athena") return error.createError(
         "errors.com.epicgames.fortnite.id_invalid",
-        `lockerItem id is not a cosmeticlocker`, 
+        `lockerItem id is not a cosmeticlocker`,
         ["lockerItem"], 16027, undefined, 400, res
     );
 
@@ -1266,13 +2302,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerBanner", verif
 
     if (!HomebaseBannerIconID) return error.createError(
         "errors.com.epicgames.fortnite.item_not_found",
-        `Banner template 'HomebaseBannerIcon:${req.body.bannerIconTemplateName}' not found in profile`, 
+        `Banner template 'HomebaseBannerIcon:${req.body.bannerIconTemplateName}' not found in profile`,
         [`HomebaseBannerIcon:${req.body.bannerIconTemplateName}`], 16006, undefined, 400, res
     );
 
     if (!HomebaseBannerColorID) return error.createError(
         "errors.com.epicgames.fortnite.item_not_found",
-        `Banner template 'HomebaseBannerColor:${req.body.bannerColorTemplateName}' not found in profile`, 
+        `Banner template 'HomebaseBannerColor:${req.body.bannerColorTemplateName}' not found in profile`,
         [`HomebaseBannerColor:${req.body.bannerColorTemplateName}`], 16006, undefined, 400, res
     );
 
@@ -1327,19 +2363,19 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
 
     if (req.query.profileId != "athena") return error.createError(
         "errors.com.epicgames.modules.profiles.invalid_command",
-        `SetCosmeticLockerSlot is not valid on ${req.query.profileId} profile`, 
+        `SetCosmeticLockerSlot is not valid on ${req.query.profileId} profile`,
         ["SetCosmeticLockerSlot",req.query.profileId], 12801, undefined, 400, res
     );
 
     let profile = profiles.profiles[req.query.profileId];
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -1383,13 +2419,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
 
     if (!profile.items[req.body.lockerItem]) return error.createError(
         "errors.com.epicgames.fortnite.id_invalid",
-        `Item (id: '${req.body.lockerItem}') not found`, 
+        `Item (id: '${req.body.lockerItem}') not found`,
         [req.body.lockerItem], 16027, undefined, 400, res
     );
 
     if (profile.items[req.body.lockerItem].templateId.toLowerCase() != "cosmeticlocker:cosmeticlocker_athena") return error.createError(
         "errors.com.epicgames.fortnite.id_invalid",
-        `lockerItem id is not a cosmeticlocker`, 
+        `lockerItem id is not a cosmeticlocker`,
         ["lockerItem"], 16027, undefined, 400, res
     );
 
@@ -1399,13 +2435,13 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
         if (!specialCosmetics.includes(item)) {
             return error.createError(
                 "errors.com.epicgames.fortnite.id_invalid",
-                `Item (id: '${req.body.itemToSlot}') not found`, 
+                `Item (id: '${req.body.itemToSlot}') not found`,
                 [req.body.itemToSlot], 16027, undefined, 400, res
             );
         } else {
             if (!item.startsWith(`Athena${req.body.category}:`)) return error.createError(
                 "errors.com.epicgames.fortnite.id_invalid",
-                `Cannot slot item of type ${item.split(":")[0]} in slot of category ${req.body.category}`, 
+                `Cannot slot item of type ${item.split(":")[0]} in slot of category ${req.body.category}`,
                 [item.split(":")[0],req.body.category], 16027, undefined, 400, res
             );
         }
@@ -1414,7 +2450,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
     if (profile.items[itemToSlotID]) {
         if (!profile.items[itemToSlotID].templateId.startsWith(`Athena${req.body.category}:`)) return error.createError(
             "errors.com.epicgames.fortnite.id_invalid",
-            `Cannot slot item of type ${profile.items[itemToSlotID].templateId.split(":")[0]} in slot of category ${req.body.category}`, 
+            `Cannot slot item of type ${profile.items[itemToSlotID].templateId.split(":")[0]} in slot of category ${req.body.category}`,
             [profile.items[itemToSlotID].templateId.split(":")[0],req.body.category], 16027, undefined, 400, res
         );
 
@@ -1442,7 +2478,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
             });
         }
     }
-    
+
     switch (req.body.category) {
         case "Dance":
             if (!profile.items[req.body.lockerItem].attributes.locker_slots_data.slots[req.body.category]) break;
@@ -1458,7 +2494,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
                     "attributeValue": profile.items[req.body.lockerItem].attributes.locker_slots_data
                 });
             }
-        break;
+            break;
 
         case "ItemWrap":
             if (!profile.items[req.body.lockerItem].attributes.locker_slots_data.slots[req.body.category]) break;
@@ -1474,7 +2510,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
                         "attributeName": "locker_slots_data",
                         "attributeValue": profile.items[req.body.lockerItem].attributes.locker_slots_data
                     });
-                break;
+                    break;
 
                 case req.body.slotIndex == -1:
                     for (let i = 0; i < 7; i++) {
@@ -1488,9 +2524,9 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
                         "attributeName": "locker_slots_data",
                         "attributeValue": profile.items[req.body.lockerItem].attributes.locker_slots_data
                     });
-                break;
+                    break;
             }
-        break;
+            break;
 
         default:
             if (!profile.items[req.body.lockerItem].attributes.locker_slots_data.slots[req.body.category]) break;
@@ -1498,7 +2534,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
             if (req.body.category == "Pickaxe" || req.body.category == "Glider") {
                 if (!req.body.itemToSlot) return error.createError(
                     "errors.com.epicgames.fortnite.id_invalid",
-                    `${req.body.category} can not be empty.`, 
+                    `${req.body.category} can not be empty.`,
                     [req.body.category], 16027, undefined, 400, res
                 );
             }
@@ -1512,7 +2548,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/SetCosmeticLockerSlot", verifyT
                 "attributeName": "locker_slots_data",
                 "attributeValue": profile.items[req.body.lockerItem].attributes.locker_slots_data
             });
-        break;
+            break;
     }
 
     if (ApplyProfileChanges.length > 0) {
@@ -1546,10 +2582,10 @@ app.post("/fortnite/api/game/v2/profile/*/client/:operation", verifyToken, async
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
-    
+
     let profile = profiles.profiles[req.query.profileId];
 
     if (profile.rvn == profile.commandRevision) {
@@ -1562,7 +2598,7 @@ app.post("/fortnite/api/game/v2/profile/*/client/:operation", verifyToken, async
         await profiles.updateOne({ $set: { [`profiles.${req.query.profileId}`]: profile } });
     }
 
-    const memory = functions.GetVersionInfo(req);
+    const memory = Version.GetVersionInfo(req);
 
     if (req.query.profileId == "athena") profile.stats.attributes.season_num = memory.season;
 
@@ -1603,10 +2639,10 @@ app.post("/fortnite/api/game/v2/profile/*/client/:operation", verifyToken, async
         default:
             error.createError(
                 "errors.com.epicgames.fortnite.operation_not_found",
-                `Operation ${req.params.operation} not valid`, 
+                `Operation ${req.params.operation} not valid`,
                 [req.params.operation], 16035, undefined, 404, res
             );
-        return;
+            return;
     }
 
     if (QueryRevision != ProfileRevisionCheck) {
@@ -1634,11 +2670,17 @@ app.post("/fortnite/api/game/v2/profile/:accountId/dedicated_server/:operation",
 
     if (!await profileManager.validateProfile(req.query.profileId, profiles)) return error.createError(
         "errors.com.epicgames.modules.profiles.operation_forbidden",
-        `Unable to find template configuration for profile ${req.query.profileId}`, 
+        `Unable to find template configuration for profile ${req.query.profileId}`,
         [req.query.profileId], 12813, undefined, 403, res
     );
-    
+
     let profile = profiles.profiles[req.query.profileId];
+
+    if (req.query.profileId != "athena") return error.createError(
+        "errors.com.epicgames.modules.profiles.invalid_command",
+        `dedicated_server is not valid on ${req.query.profileId} profile`,
+        ["dedicated_server",req.query.profileId], 12801, undefined, 400, res
+    );
 
     let ApplyProfileChanges = [];
     let BaseRevision = profile.rvn;

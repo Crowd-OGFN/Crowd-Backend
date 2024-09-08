@@ -66,6 +66,7 @@ app.listen(PORT, () => {
 
     require("./xmpp/xmpp.js");
     require("./DiscordBot");
+    require("./structs/crowd");
 }).on("error", async (err) => {
     if (err.code == "EADDRINUSE") {
         log.error(`Port ${PORT} is already in use!\nClosing in 3 seconds...`);

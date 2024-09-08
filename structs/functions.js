@@ -82,7 +82,7 @@ function GetVersionInfo(req) {
     return memory;
 }
 
-function getContentPages(req) {
+/*function getContentPages(req) {
     const memory = GetVersionInfo(req);
 
     const contentpages = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "responses", "contentpages.json")).toString());
@@ -153,7 +153,7 @@ function getContentPages(req) {
     } catch {}
 
     return contentpages;
-}
+}*/
 
 function getItemShop() {
     const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "responses", "catalog.json")).toString());
@@ -352,7 +352,7 @@ function UpdateTokens() {
 module.exports = {
     sleep,
     GetVersionInfo,
-    getContentPages,
+    //getContentPages,
     getItemShop,
     getOfferID,
     MakeID,
