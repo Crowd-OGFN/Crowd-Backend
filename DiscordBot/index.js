@@ -9,12 +9,19 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 
 client.commands = new Collection();
 
-const commandFiles = fs.readdirSync("./DiscordBot/commands").filter(file => file.endsWith(".js"));
+const loadCommands = () => {
+    const commandFiles = fs.readdirSync("./DiscordBot/commands").filter(file => file.endsWith(".js"));
 
-for (const file of commandFiles) {
-    const command = require(`./commands/${file}`);
-    client.commands.set(command.commandInfo.name, command);
-}
+    client.commands.clear();
+
+    for (const file of commandFiles) {
+        delete require.cache[require.resolve(`./commands/${file}`)];
+        const command = require(`./commands/${file}`);
+        client.commands.set(command.commandInfo.name, command);
+    }
+};
+
+loadCommands();
 
 client.once("ready", () => {
     logger.bot(`Bot online and logged in as ${client.user.username}`);
@@ -29,8 +36,7 @@ client.once("ready", () => {
         commands = client.application.commands;
     }
 
-    commandFiles.forEach(file => {
-        const command = require(`./commands/${file}`);
+    client.commands.forEach(command => {
         commands.create(command.commandInfo);
     });
 });
